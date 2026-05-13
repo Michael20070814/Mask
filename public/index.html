@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SAM Mask Console</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="topbar" aria-label="运行配置">
+        <div class="brand">
+          <div class="mark" aria-hidden="true"></div>
+          <div>
+            <h1>SAM Mask Console</h1>
+            <p id="runtimeMeta">连接后端中...</p>
+          </div>
+        </div>
+        <div class="status-pill" id="checkpointState">CHECKPOINT: CHECKING</div>
+      </section>
+
+      <section class="workspace">
+        <form class="panel control-panel" id="processForm">
+          <div class="section-title">
+            <span>INPUT STREAMS</span>
+            <span class="muted">image + binary mask</span>
+          </div>
+
+          <div class="input-grid">
+            <article class="source" data-source="image">
+              <div class="source-head">
+                <h2>原始图片</h2>
+                <span id="imageSourceLabel">未选择</span>
+              </div>
+              <div class="dropzone" id="imageDrop">
+                <input id="imageFile" type="file" accept="image/*" hidden />
+                <button class="ghost-button" type="button" data-pick="image">选择文件</button>
+                <p>拖拽图片到这里</p>
+              </div>
+              <label class="address-field">
+                <span>地址</span>
+                <input
+                  id="imageAddress"
+                  type="text"
+                  autocomplete="off"
+                  placeholder="https://... 或 ~/Pictures/input.png"
+                />
+              </label>
+              <div class="preview-frame">
+                <img id="imagePreview" alt="原始图片预览" />
+                <span id="imageEmpty">等待输入</span>
+              </div>
+            </article>
+
+            <article class="source" data-source="mask">
+              <div class="source-head">
+                <h2>Mask 图片</h2>
+                <span id="maskSourceLabel">未选择</span>
+              </div>
+              <div class="dropzone" id="maskDrop">
+                <input id="maskFile" type="file" accept="image/*" hidden />
+                <button class="ghost-button" type="button" data-pick="mask">选择文件</button>
+                <p>拖拽 mask 到这里</p>
+              </div>
+              <label class="address-field">
+                <span>地址</span>
+                <input
+                  id="maskAddress"
+                  type="text"
+                  autocomplete="off"
+                  placeholder="https://... 或 ~/Pictures/mask.png"
+                />
+              </label>
+              <div class="preview-frame mask-preview">
+                <img id="maskPreview" alt="Mask 图片预览" />
+                <span id="maskEmpty">等待输入</span>
+              </div>
+            </article>
+          </div>
+
+          <div class="settings">
+            <label>
+              <span>Checkpoint</span>
+              <input id="checkpoint" type="text" autocomplete="off" />
+            </label>
+            <label>
+              <span>Model</span>
+              <select id="modelType">
+                <option value="vit_h">vit_h</option>
+                <option value="vit_l">vit_l</option>
+                <option value="vit_b">vit_b</option>
+              </select>
+            </label>
+            <label class="toggle">
+              <input id="useBox" type="checkbox" />
+              <span>Use box prompt</span>
+            </label>
+          </div>
+
+          <div class="actions">
+            <button class="primary-button" id="runButton" type="submit">
+              <span class="run-dot" aria-hidden="true"></span>
+              Run SAM
+            </button>
+            <button class="secondary-button" id="resetButton" type="button">Reset</button>
+          </div>
+        </form>
+
+        <section class="panel process-panel" aria-live="polite">
+          <div class="section-title">
+            <span>PROCESS</span>
+            <span id="elapsed">idle</span>
+          </div>
+          <div class="process-state" id="processState">
+            <div class="scanner" aria-hidden="true"></div>
+            <div>
+              <h2 id="stateTitle">待机</h2>
+              <p id="stateText">选择原图和 mask 后开始处理。</p>
+            </div>
+          </div>
+          <pre class="log" id="logOutput">ready</pre>
+        </section>
+      </section>
+
+      <section class="results" id="results">
+        <article class="result-panel">
+          <div class="section-title">
+            <span>MASKED OUTPUT</span>
+            <a id="outputLink" href="#" target="_blank" rel="noreferrer">open</a>
+          </div>
+          <div class="result-canvas">
+            <img id="outputImage" alt="生成后的 mask 可视化结果" />
+            <span id="outputEmpty">暂无输出</span>
+          </div>
+        </article>
+        <article class="result-panel">
+          <div class="section-title">
+            <span>BINARY MASK</span>
+            <a id="maskLink" href="#" target="_blank" rel="noreferrer">open</a>
+          </div>
+          <div class="result-canvas checker">
+            <img id="resultMask" alt="生成的二值 mask" />
+            <span id="resultMaskEmpty">暂无 mask</span>
+          </div>
+        </article>
+
+        <article class="result-panel editor-panel" aria-label="Mask 编辑器">
+          <div class="section-title">
+            <span>MASK EDITOR</span>
+            <span id="editorMeta">等待生成 mask</span>
+          </div>
+          <div class="editor-layout">
+            <div class="mask-editor-canvas checker" id="editorFrame">
+              <img id="editorImageOverlay" class="editor-image-overlay" alt="原图参考" />
+              <canvas id="maskEditor" aria-label="可编辑 mask 画布"></canvas>
+              <div class="brush-cursor" id="brushCursor" aria-hidden="true"></div>
+              <span id="editorEmpty">运行 SAM 后在这里编辑二值 mask</span>
+            </div>
+            <div class="editor-controls">
+              <div class="tool-row" role="group" aria-label="编辑模式">
+                <button class="tool-button active" id="paintWhite" type="button">涂白</button>
+                <button class="tool-button" id="paintBlack" type="button">擦除</button>
+              </div>
+              <label class="brush-field">
+                <span>画笔</span>
+                <input id="brushSize" type="range" min="2" max="96" value="24" />
+                <output id="brushValue">24 px</output>
+              </label>
+              <label class="toggle editor-toggle">
+                <input id="showEditorImage" type="checkbox" checked disabled />
+                <span>显示原图</span>
+              </label>
+              <label class="brush-field">
+                <span>透明度</span>
+                <input id="editorImageOpacity" type="range" min="0" max="100" value="45" disabled />
+                <output id="editorImageOpacityValue">45%</output>
+              </label>
+              <div class="tool-row">
+                <button class="secondary-button" id="undoEdit" type="button" disabled>Undo</button>
+                <button class="secondary-button" id="resetEdit" type="button" disabled>Reset</button>
+              </div>
+              <div class="tool-row tool-row-stack">
+                <button class="secondary-button" id="loadMaskEdit" type="button" disabled>
+                  载入当前结果
+                </button>
+                <button class="secondary-button" id="downloadEditedMask" type="button" disabled>
+                  导出 mask
+                </button>
+                <button class="secondary-button" id="downloadMaskedOutput" type="button" disabled>
+                  导出红色结果
+                </button>
+                <button class="primary-button" id="useEditedMask" type="button" disabled>
+                  作为输入 mask
+                </button>
+              </div>
+              <p class="editor-hint">鼠标拖动编辑：涂白增加 mask，擦除变黑。</p>
+            </div>
+          </div>
+        </article>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
