@@ -50,6 +50,13 @@ SAM_PYTHON=/path/to/python npm start
 
 权重尚未下载时，页面会显示 `CHECKPOINT: MISSING`，提交处理会返回明确的缺失路径。下载权重后刷新页面即可运行。
 
+## 代码结构
+
+- `server/`：后端模块，负责 HTTP 路由、输入文件落盘、静态文件服务和 SAM 进程调用。
+- `server/model/samRunner.js`：唯一直接调用 `segment-anything/launch.py` 的模块。
+- `public/js/`：前端模块，负责用户输入、API 请求、运行状态、结果展示和 mask 编辑器。
+- `public/index.html`：页面结构，只加载 `public/js/app.js` 作为前端入口。
+
 ## 输入方式
 
 - 原始图片：拖拽/选择文件，或填写 `http(s)` 图片地址/本地路径。
