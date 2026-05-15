@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Mask Edit Console</title>
+    <title>SAM Mask Console</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -12,18 +12,18 @@
         <div class="brand">
           <div class="mark" aria-hidden="true"></div>
           <div>
-            <h1>Mask Edit Console</h1>
+            <h1>SAM Mask Console</h1>
             <p id="runtimeMeta">连接后端中...</p>
           </div>
         </div>
-        <div class="status-pill" id="weightState">MODEL: CHECKING</div>
+        <div class="status-pill" id="checkpointState">CHECKPOINT: CHECKING</div>
       </section>
 
       <section class="workspace">
         <form class="panel control-panel" id="processForm">
           <div class="section-title">
             <span>INPUT STREAMS</span>
-            <span class="muted">image + edit mask</span>
+            <span class="muted">image + binary mask</span>
           </div>
 
           <div class="input-grid">
@@ -78,52 +78,29 @@
             </article>
           </div>
 
-          <div class="settings model-settings">
+          <div class="settings">
             <label>
-              <span>Base model</span>
-              <input id="baseModel" type="text" autocomplete="off" />
+              <span>Checkpoint</span>
+              <input id="checkpoint" type="text" autocomplete="off" />
             </label>
             <label>
-              <span>LoRA weights</span>
-              <input id="loraModel" type="text" autocomplete="off" />
-            </label>
-            <label>
-              <span>Adapter</span>
-              <input id="loraAdapter" type="text" autocomplete="off" />
-            </label>
-          </div>
-
-          <div class="settings infer-settings">
-            <label class="prompt-field">
-              <span>Prompt</span>
-              <input id="prompt" type="text" autocomplete="off" />
-            </label>
-            <label>
-              <span>Negative</span>
-              <input id="negativePrompt" type="text" autocomplete="off" />
-            </label>
-            <label>
-              <span>Steps</span>
-              <input id="numInferenceSteps" type="number" min="1" max="200" step="1" />
-            </label>
-            <label>
-              <span>Device</span>
-              <input id="device" type="text" autocomplete="off" />
+              <span>Model</span>
+              <select id="modelType">
+                <option value="vit_h">vit_h</option>
+                <option value="vit_l">vit_l</option>
+                <option value="vit_b">vit_b</option>
+              </select>
             </label>
             <label class="toggle">
-              <input id="enableMaskDilation" type="checkbox" />
-              <span>Dilation</span>
-            </label>
-            <label class="toggle">
-              <input id="enableMaskBlur" type="checkbox" />
-              <span>Blur</span>
+              <input id="useBox" type="checkbox" />
+              <span>Use box prompt</span>
             </label>
           </div>
 
           <div class="actions">
             <button class="primary-button" id="runButton" type="submit">
               <span class="run-dot" aria-hidden="true"></span>
-              Run Edit
+              Run SAM
             </button>
             <button class="secondary-button" id="resetButton" type="button">Reset</button>
           </div>
@@ -148,11 +125,11 @@
       <section class="results" id="results">
         <article class="result-panel">
           <div class="section-title">
-            <span>EDIT OUTPUT</span>
+            <span>MASKED OUTPUT</span>
             <a id="outputLink" href="#" target="_blank" rel="noreferrer">open</a>
           </div>
           <div class="result-canvas">
-            <img id="outputImage" alt="生成后的编辑结果" />
+            <img id="outputImage" alt="生成后的 mask 可视化结果" />
             <span id="outputEmpty">暂无输出</span>
           </div>
         </article>
@@ -177,7 +154,7 @@
               <img id="editorImageOverlay" class="editor-image-overlay" alt="原图参考" />
               <canvas id="maskEditor" aria-label="可编辑 mask 画布"></canvas>
               <div class="brush-cursor" id="brushCursor" aria-hidden="true"></div>
-              <span id="editorEmpty">运行编辑后在这里编辑二值 mask</span>
+              <span id="editorEmpty">运行 SAM 后在这里编辑二值 mask</span>
             </div>
             <div class="editor-controls">
               <div class="tool-row" role="group" aria-label="编辑模式">

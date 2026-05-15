@@ -332,20 +332,10 @@ h1 {
 
 .settings {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: minmax(220px, 1fr) 128px 154px;
   gap: 12px;
   align-items: end;
   margin-top: 14px;
-}
-
-.model-settings {
-  grid-template-columns: minmax(260px, 1fr) minmax(260px, 1fr) minmax(120px, 0.45fr);
-}
-
-.infer-settings {
-  grid-template-columns:
-    minmax(260px, 1.4fr) minmax(180px, 1fr) minmax(82px, 0.35fr)
-    minmax(112px, 0.42fr) minmax(116px, 0.42fr) minmax(88px, 0.35fr);
 }
 
 .toggle {
@@ -643,11 +633,6 @@ h1 {
     grid-template-columns: 1fr;
   }
 
-  .model-settings,
-  .infer-settings {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .process-panel {
     min-height: 420px;
   }
@@ -679,9 +664,7 @@ h1 {
   }
 
   .input-grid,
-  .settings,
-  .model-settings,
-  .infer-settings {
+  .settings {
     grid-template-columns: 1fr;
   }
 

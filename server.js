@@ -10,40 +10,18 @@ const ROOT_DIR = __dirname;
 const PUBLIC_DIR = path.join(ROOT_DIR, "public");
 const RUNS_DIR = path.join(ROOT_DIR, "runs");
 const MPL_CONFIG_DIR = path.join(RUNS_DIR, ".matplotlib");
-const INFER_PKG_DIR = process.env.INFER_PKG_DIR || path.join(os.homedir(), "Project", "infer_pkg");
-const INFER_SCRIPT = path.join(INFER_PKG_DIR, "inference.py");
-const DEFAULT_BASE_MODEL = process.env.INFER_BASE_MODEL || "Qwen/Qwen-Image-Edit-2511";
-const DEFAULT_LORA_MODEL =
-  process.env.INFER_LORA_MODEL ||
-  path.join(INFER_PKG_DIR, "pretrained_weights", "pytorch_lora_weights.safetensors");
-const DEFAULT_LORA_ADAPTER_NAME = process.env.INFER_LORA_ADAPTER_NAME || "default";
-const DEFAULT_PROMPT =
-  process.env.INFER_PROMPT || "Modify the object masked by image 2 to white.";
-const DEFAULT_NEGATIVE_PROMPT = process.env.INFER_NEGATIVE_PROMPT || "";
-const DEFAULT_NUM_INFERENCE_STEPS = Number(process.env.INFER_NUM_INFERENCE_STEPS || 50);
-const DEFAULT_DEVICE = process.env.INFER_DEVICE || "cuda:0";
-const DEFAULT_ENABLE_MASK_TO_BOX = parseBooleanEnv(process.env.INFER_ENABLE_MASK_TO_BOX, false);
-const DEFAULT_MASK_BOX_MARGIN = Number(process.env.INFER_MASK_BOX_MARGIN || 200);
-const DEFAULT_ENABLE_MASK_BLUR = parseBooleanEnv(process.env.INFER_ENABLE_MASK_BLUR, true);
-const DEFAULT_BLUR_KERNEL = Number(process.env.INFER_BLUR_KERNEL || 75);
-const DEFAULT_BLUR_SIGMA = Number(process.env.INFER_BLUR_SIGMA || 15.0);
-const DEFAULT_ENABLE_MASK_DILATION = parseBooleanEnv(
-  process.env.INFER_ENABLE_MASK_DILATION,
-  true
-);
-const DEFAULT_DILATION_KERNEL = Number(process.env.INFER_DILATION_KERNEL || 75);
+const SAM_DIR = process.env.SAM_DIR || path.join(os.homedir(), "Project", "segment-anything");
+const LAUNCH_SCRIPT = path.join(SAM_DIR, "launch.py");
+const DEFAULT_CHECKPOINT =
+  process.env.SAM_CHECKPOINT ||
+  path.join(SAM_DIR, "sam_vit_h_4b8939.pth");
 const DEFAULT_CONDA_BIN = path.join(os.homedir(), "miniconda3", "bin", "conda");
-const CONDA_BIN =
-  process.env.CONDA_BIN || (fileExists(DEFAULT_CONDA_BIN) ? DEFAULT_CONDA_BIN : "conda");
-const INFER_CONDA_ENV = process.env.INFER_CONDA_ENV || "vae-mnist";
-const INFER_PYTHON = process.env.INFER_PYTHON || "";
-const HF_HOME = expandHome(
-  process.env.HF_HOME || path.join(os.homedir(), ".cache", "huggingface")
-);
-const HF_HUB_CACHE = expandHome(process.env.HF_HUB_CACHE || path.join(HF_HOME, "hub"));
+const CONDA_BIN = process.env.CONDA_BIN || (fileExists(DEFAULT_CONDA_BIN) ? DEFAULT_CONDA_BIN : "conda");
+const SAM_CONDA_ENV = process.env.SAM_CONDA_ENV || "vae-mnist";
+const SAM_PYTHON = process.env.SAM_PYTHON || "";
 
 const MAX_JSON_BYTES = Number(process.env.MAX_JSON_BYTES || 160 * 1024 * 1024);
-const PROCESS_TIMEOUT_MS = Number(process.env.INFER_TIMEOUT_MS || 30 * 60 * 1000);
+const PROCESS_TIMEOUT_MS = Number(process.env.SAM_TIMEOUT_MS || 30 * 60 * 1000);
 const START_PORT = Number(process.env.PORT || 5173);
 
 const MIME_TYPES = {
@@ -60,13 +38,6 @@ const MIME_TYPES = {
   ".ico": "image/x-icon",
   ".txt": "text/plain; charset=utf-8"
 };
-
-function parseBooleanEnv(value, fallback) {
-  if (value === undefined || value === "") {
-    return fallback;
-  }
-  return /^(1|true|yes|on)$/i.test(String(value));
-}
 
 function jsonResponse(res, statusCode, payload) {
   const body = JSON.stringify(payload);
@@ -95,15 +66,6 @@ function safeJoin(root, requestPath) {
 function fileExists(filePath) {
   try {
     return fs.existsSync(filePath) && fs.statSync(filePath).isFile();
-  } catch {
-    return false;
-  }
-}
-
-function pathExists(targetPath) {
-  try {
-    fs.accessSync(targetPath);
-    return true;
   } catch {
     return false;
   }
@@ -144,203 +106,9 @@ function isHttpUrl(value) {
   return /^https?:\/\//i.test(value);
 }
 
-function isLocalModelPath(value) {
-  return (
-    value === "~" ||
-    value.startsWith("~/") ||
-    value.startsWith("/") ||
-    value.startsWith("./") ||
-    value.startsWith("../") ||
-    /^[A-Za-z]:[\\/]/.test(value) ||
-    /\.(safetensors|bin|pt|pth|ckpt)$/i.test(value)
-  );
-}
-
-function normalizeModelValue(value) {
-  const trimmed = String(value || "").trim();
-  if (!trimmed || !isLocalModelPath(trimmed)) {
-    return trimmed;
-  }
-  const expanded = expandHome(trimmed);
-  return path.isAbsolute(expanded) ? expanded : path.resolve(INFER_PKG_DIR, expanded);
-}
-
-function modelPathExists(value) {
-  const normalized = normalizeModelValue(value);
-  return !isLocalModelPath(String(value || "").trim()) || pathExists(normalized);
-}
-
-function isHubModelId(value) {
-  const trimmed = String(value || "").trim();
-  return Boolean(trimmed && !isLocalModelPath(trimmed) && !isHttpUrl(trimmed));
-}
-
-function hubModelCacheDir(modelId) {
-  return path.join(HF_HUB_CACHE, `models--${String(modelId).replace(/\//g, "--")}`);
-}
-
-function readTextFile(filePath) {
-  try {
-    return fs.readFileSync(filePath, "utf8");
-  } catch {
-    return "";
-  }
-}
-
-function listDirectories(dirPath) {
-  try {
-    return fs
-      .readdirSync(dirPath, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => path.join(dirPath, entry.name));
-  } catch {
-    return [];
-  }
-}
-
-function listFilesRecursive(root, predicate, limit = 200) {
-  const results = [];
-  const visit = (dirPath) => {
-    if (results.length >= limit) {
-      return;
-    }
-    let entries;
-    try {
-      entries = fs.readdirSync(dirPath, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      const entryPath = path.join(dirPath, entry.name);
-      if (entry.isDirectory()) {
-        visit(entryPath);
-      } else if (predicate(entryPath, entry)) {
-        results.push(entryPath);
-        if (results.length >= limit) {
-          return;
-        }
-      }
-    }
-  };
-  visit(root);
-  return results;
-}
-
-function cachedSnapshotDir(modelId) {
-  const cacheDir = hubModelCacheDir(modelId);
-  const ref = readTextFile(path.join(cacheDir, "refs", "main")).trim();
-  if (ref) {
-    const snapshotDir = path.join(cacheDir, "snapshots", ref);
-    if (pathExists(snapshotDir)) {
-      return snapshotDir;
-    }
-  }
-  return listDirectories(path.join(cacheDir, "snapshots"))[0] || "";
-}
-
-function inspectHubModelCache(modelId) {
-  if (!isHubModelId(modelId)) {
-    return { ok: true, type: "local", modelId };
-  }
-
-  const cacheDir = hubModelCacheDir(modelId);
-  if (!pathExists(cacheDir)) {
-    return {
-      ok: false,
-      code: "BASE_MODEL_NOT_CACHED",
-      modelId,
-      cacheDir,
-      message: `Base model 未在本地 Hugging Face cache 中找到：${modelId}`
-    };
-  }
-
-  const snapshotDir = cachedSnapshotDir(modelId);
-  if (!snapshotDir) {
-    return {
-      ok: false,
-      code: "BASE_MODEL_NOT_CACHED",
-      modelId,
-      cacheDir,
-      message: `Base model cache 没有可用 snapshot：${cacheDir}`
-    };
-  }
-
-  const incompleteFiles = listFilesRecursive(
-    path.join(cacheDir, "blobs"),
-    (filePath) => filePath.endsWith(".incomplete"),
-    20
-  ).map((filePath) => path.relative(cacheDir, filePath));
-  const indexFiles = listFilesRecursive(
-    snapshotDir,
-    (filePath) => /\.(safetensors|bin)\.index\.json$/i.test(path.basename(filePath)),
-    50
-  );
-  const missingFiles = [];
-
-  for (const indexFile of indexFiles) {
-    let index;
-    try {
-      index = JSON.parse(readTextFile(indexFile));
-    } catch {
-      continue;
-    }
-    const shardNames = new Set(Object.values(index.weight_map || {}));
-    for (const shardName of shardNames) {
-      const shardPath = path.join(path.dirname(indexFile), shardName);
-      if (!fileExists(shardPath)) {
-        missingFiles.push(path.relative(snapshotDir, shardPath));
-      }
-    }
-  }
-
-  if (missingFiles.length || incompleteFiles.length) {
-    const detail = missingFiles.length
-      ? `缺少 ${missingFiles.length} 个权重分片`
-      : `存在 ${incompleteFiles.length} 个未完成下载文件`;
-    return {
-      ok: false,
-      code: "BASE_MODEL_CACHE_INCOMPLETE",
-      modelId,
-      cacheDir,
-      snapshotDir,
-      missingFiles: missingFiles.slice(0, 20),
-      incompleteFiles,
-      message: `Base model 本地 cache 不完整：${detail}。`
-    };
-  }
-
-  return {
-    ok: true,
-    type: "hub-cache",
-    modelId,
-    cacheDir,
-    snapshotDir
-  };
-}
-
-function booleanFromPayload(value, fallback) {
-  return typeof value === "boolean" ? value : fallback;
-}
-
-function numberFromPayload(value, fallback, min, max) {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) {
-    return fallback;
-  }
-  return Math.min(max, Math.max(min, parsed));
-}
-
-function integerFromPayload(value, fallback, min, max) {
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isFinite(parsed)) {
-    return fallback;
-  }
-  return Math.min(max, Math.max(min, parsed));
-}
-
 function getPythonLauncher(scriptArgs) {
-  if (INFER_PYTHON) {
-    const pythonPath = expandHome(INFER_PYTHON);
+  if (SAM_PYTHON) {
+    const pythonPath = expandHome(SAM_PYTHON);
     return {
       command: pythonPath,
       args: scriptArgs,
@@ -351,8 +119,8 @@ function getPythonLauncher(scriptArgs) {
   const condaPath = expandHome(CONDA_BIN);
   return {
     command: condaPath,
-    args: ["run", "--no-capture-output", "-n", INFER_CONDA_ENV, "python", ...scriptArgs],
-    label: `${condaPath} run -n ${INFER_CONDA_ENV} python`
+    args: ["run", "--no-capture-output", "-n", SAM_CONDA_ENV, "python", ...scriptArgs],
+    label: `${condaPath} run -n ${SAM_CONDA_ENV} python`
   };
 }
 
@@ -440,76 +208,29 @@ async function saveUploadedSource(source, label, runDir) {
   throw new Error(`${label} 输入模式无效。`);
 }
 
-function runInfer({
-  imagePath,
-  maskPath,
-  baseModel,
-  loraModel,
-  loraAdapterName,
-  prompt,
-  negativePrompt,
-  saveDir,
-  numInferenceSteps,
-  device,
-  enableMaskToBox,
-  maskBoxMargin,
-  enableMaskBlur,
-  blurKernel,
-  blurSigma,
-  enableMaskDilation,
-  dilationKernel
-}) {
+function runSam({ imagePath, maskPath, checkpointPath, modelType, useBox, outputPath }) {
   return new Promise((resolve) => {
     const scriptArgs = [
-      INFER_SCRIPT,
-      "--base-model",
-      baseModel,
-      "--lora-model",
-      loraModel,
-      "--lora-adapter-name",
-      loraAdapterName,
-      "--prompt",
-      prompt,
-      "--negative-prompt",
-      negativePrompt,
-      "--source-image",
+      LAUNCH_SCRIPT,
+      "--image",
       imagePath,
-      "--mask-image",
+      "--mask",
       maskPath,
-      "--save-dir",
-      saveDir,
-      "--num-inference-steps",
-      String(numInferenceSteps),
-      "--device",
-      device
+      "--checkpoint",
+      checkpointPath,
+      "--model-type",
+      modelType,
+      "--output",
+      outputPath
     ];
-    if (enableMaskToBox) {
-      scriptArgs.push("--enable-mask-to-box", "--mask-box-margin", String(maskBoxMargin));
-    }
-    if (enableMaskBlur) {
-      scriptArgs.push(
-        "--enable-mask-blur",
-        "--blur-kernel",
-        String(blurKernel),
-        "--blur-sigma",
-        String(blurSigma)
-      );
-    }
-    if (enableMaskDilation) {
-      scriptArgs.push("--enable-mask-dilation", "--dilation-kernel", String(dilationKernel));
+    if (useBox) {
+      scriptArgs.push("--use-box");
     }
     const launcher = getPythonLauncher(scriptArgs);
 
     const child = spawn(launcher.command, launcher.args, {
-      cwd: INFER_PKG_DIR,
-      env: {
-        ...process.env,
-        PYTHONUNBUFFERED: "1",
-        MPLCONFIGDIR: MPL_CONFIG_DIR,
-        HF_HUB_OFFLINE: process.env.HF_HUB_OFFLINE || "1",
-        TRANSFORMERS_OFFLINE: process.env.TRANSFORMERS_OFFLINE || "1",
-        DIFFUSERS_OFFLINE: process.env.DIFFUSERS_OFFLINE || "1"
-      }
+      cwd: SAM_DIR,
+      env: { ...process.env, PYTHONUNBUFFERED: "1", MPLCONFIGDIR: MPL_CONFIG_DIR }
     });
 
     let stdout = "";
@@ -537,18 +258,6 @@ function runInfer({
   });
 }
 
-async function findInferOutput(runDir, imagePath) {
-  const imageStem = path.parse(imagePath).name;
-  const expectedPath = path.join(runDir, `output-${imageStem}.jpg`);
-  if (fileExists(expectedPath)) {
-    return expectedPath;
-  }
-
-  const files = await fsp.readdir(runDir);
-  const outputName = files.find((fileName) => /^output-.+\.(jpe?g|png|webp)$/i.test(fileName));
-  return outputName ? path.join(runDir, outputName) : null;
-}
-
 async function handleProcess(req, res) {
   let payload;
   try {
@@ -561,109 +270,32 @@ async function handleProcess(req, res) {
     });
   }
 
-  const baseModel = normalizeModelValue(payload.baseModel || DEFAULT_BASE_MODEL);
-  const loraModel = normalizeModelValue(payload.loraModel || DEFAULT_LORA_MODEL);
-  const loraAdapterName = String(payload.loraAdapterName || DEFAULT_LORA_ADAPTER_NAME).trim();
-  const prompt = String(payload.prompt || DEFAULT_PROMPT).trim();
-  const negativePrompt =
-    payload.negativePrompt === undefined
-      ? DEFAULT_NEGATIVE_PROMPT
-      : String(payload.negativePrompt);
-  const numInferenceSteps = integerFromPayload(
-    payload.numInferenceSteps,
-    DEFAULT_NUM_INFERENCE_STEPS,
-    1,
-    200
-  );
-  const device = String(payload.device || DEFAULT_DEVICE).trim();
-  const enableMaskToBox = booleanFromPayload(payload.enableMaskToBox, DEFAULT_ENABLE_MASK_TO_BOX);
-  const maskBoxMargin = integerFromPayload(payload.maskBoxMargin, DEFAULT_MASK_BOX_MARGIN, 0, 2000);
-  const enableMaskBlur = booleanFromPayload(payload.enableMaskBlur, DEFAULT_ENABLE_MASK_BLUR);
-  const blurKernel = integerFromPayload(payload.blurKernel, DEFAULT_BLUR_KERNEL, 1, 501);
-  const blurSigma = numberFromPayload(payload.blurSigma, DEFAULT_BLUR_SIGMA, 0, 100);
-  const enableMaskDilation = booleanFromPayload(
-    payload.enableMaskDilation,
-    DEFAULT_ENABLE_MASK_DILATION
-  );
-  const dilationKernel = integerFromPayload(payload.dilationKernel, DEFAULT_DILATION_KERNEL, 1, 501);
+  const checkpointPath = path.resolve(expandHome(String(payload.checkpoint || DEFAULT_CHECKPOINT)));
+  const modelType = ["vit_h", "vit_l", "vit_b"].includes(payload.modelType)
+    ? payload.modelType
+    : "vit_h";
+  const useBox = Boolean(payload.useBox);
 
-  if (!fileExists(INFER_SCRIPT)) {
+  if (!fileExists(LAUNCH_SCRIPT)) {
     return jsonResponse(res, 500, {
       ok: false,
-      error: `找不到 inference.py：${INFER_SCRIPT}`,
-      code: "MISSING_INFER_SCRIPT"
+      error: `找不到 launch.py：${LAUNCH_SCRIPT}`,
+      code: "MISSING_LAUNCH"
     });
   }
 
-  if (!baseModel) {
+  if (!fileExists(checkpointPath)) {
     return jsonResponse(res, 422, {
       ok: false,
-      error: "Base model 不能为空。",
-      code: "MISSING_BASE_MODEL"
-    });
-  }
-
-  if (!loraModel) {
-    return jsonResponse(res, 422, {
-      ok: false,
-      error: "LoRA 权重路径不能为空。",
-      code: "MISSING_LORA_MODEL"
-    });
-  }
-
-  if (
-    isLocalModelPath(String(payload.baseModel || DEFAULT_BASE_MODEL).trim()) &&
-    !pathExists(baseModel)
-  ) {
-    return jsonResponse(res, 422, {
-      ok: false,
-      error: `Base model 路径不存在：${baseModel}`,
-      code: "MISSING_BASE_MODEL_PATH",
-      baseModel
-    });
-  }
-
-  if (
-    isLocalModelPath(String(payload.loraModel || DEFAULT_LORA_MODEL).trim()) &&
-    !fileExists(loraModel)
-  ) {
-    return jsonResponse(res, 422, {
-      ok: false,
-      error: `LoRA 权重文件不存在：${loraModel}`,
-      code: "MISSING_LORA_MODEL",
-      loraModel
-    });
-  }
-
-  if (!loraAdapterName) {
-    return jsonResponse(res, 422, {
-      ok: false,
-      error: "LoRA adapter name 不能为空。",
-      code: "MISSING_LORA_ADAPTER"
-    });
-  }
-
-  if (!prompt) {
-    return jsonResponse(res, 422, {
-      ok: false,
-      error: "Prompt 不能为空。",
-      code: "MISSING_PROMPT"
-    });
-  }
-
-  const baseModelCache = inspectHubModelCache(baseModel);
-  if (!baseModelCache.ok) {
-    return jsonResponse(res, 422, {
-      ok: false,
-      error: `${baseModelCache.message} 请手动准备完整基础模型缓存，或把 Base model 改成完整的本地模型目录。`,
-      code: baseModelCache.code,
-      baseModel,
-      cache: baseModelCache
+      error: `SAM 权重文件不存在：${checkpointPath}`,
+      code: "MISSING_CHECKPOINT",
+      checkpoint: checkpointPath
     });
   }
 
   const runId = `${Date.now()}-${crypto.randomBytes(4).toString("hex")}`;
   const runDir = path.join(RUNS_DIR, runId);
+  const outputPath = path.join(runDir, "result.png");
 
   try {
     await fsp.mkdir(runDir, { recursive: true });
@@ -671,24 +303,13 @@ async function handleProcess(req, res) {
     const mask = await saveUploadedSource(payload.mask, "mask", runDir);
 
     const startedAt = Date.now();
-    const result = await runInfer({
+    const result = await runSam({
       imagePath: image.path,
       maskPath: mask.path,
-      baseModel,
-      loraModel,
-      loraAdapterName,
-      prompt,
-      negativePrompt,
-      saveDir: runDir,
-      numInferenceSteps,
-      device,
-      enableMaskToBox,
-      maskBoxMargin,
-      enableMaskBlur,
-      blurKernel,
-      blurSigma,
-      enableMaskDilation,
-      dilationKernel
+      checkpointPath,
+      modelType,
+      useBox,
+      outputPath
     });
     const durationMs = Date.now() - startedAt;
 
@@ -696,9 +317,9 @@ async function handleProcess(req, res) {
       return jsonResponse(res, 500, {
         ok: false,
         error: result.didTimeout
-          ? "infer_pkg 处理超时，进程已终止。"
-          : "infer_pkg 处理失败，请查看日志。",
-        code: result.didTimeout ? "INFER_TIMEOUT" : "INFER_FAILED",
+          ? "SAM 处理超时，进程已终止。"
+          : "SAM 处理失败，请查看日志。",
+        code: result.didTimeout ? "SAM_TIMEOUT" : "SAM_FAILED",
         runId,
         logs: {
           stdout: result.stdout,
@@ -707,11 +328,11 @@ async function handleProcess(req, res) {
       });
     }
 
-    const outputPath = await findInferOutput(runDir, image.path);
-    if (!outputPath || !fileExists(outputPath)) {
+    const maskOutputPath = path.join(runDir, "result_mask.png");
+    if (!fileExists(outputPath) || !fileExists(maskOutputPath)) {
       return jsonResponse(res, 500, {
         ok: false,
-        error: "infer_pkg 已结束，但未找到输出文件。",
+        error: "SAM 已结束，但输出文件不完整。",
         code: "MISSING_OUTPUT",
         runId,
         logs: {
@@ -725,19 +346,12 @@ async function handleProcess(req, res) {
       ok: true,
       runId,
       durationMs,
-      outputUrl: `/runs/${runId}/${path.basename(outputPath)}`,
-      maskUrl: `/runs/${runId}/${path.basename(mask.path)}`,
+      outputUrl: `/runs/${runId}/result.png`,
+      maskUrl: `/runs/${runId}/result_mask.png`,
       imageUrl: `/runs/${runId}/${path.basename(image.path)}`,
       inputs: {
         image,
         mask
-      },
-      model: {
-        baseModel,
-        loraModel,
-        loraAdapterName,
-        numInferenceSteps,
-        device
       },
       logs: {
         stdout: result.stdout,
@@ -780,34 +394,16 @@ async function handleRequest(req, res) {
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
 
   if (req.method === "GET" && url.pathname === "/api/config") {
-    const baseModelCache = inspectHubModelCache(DEFAULT_BASE_MODEL);
     return jsonResponse(res, 200, {
       ok: true,
-      inferPkgDir: INFER_PKG_DIR,
-      inferScript: INFER_SCRIPT,
-      scriptExists: fileExists(INFER_SCRIPT),
-      defaultBaseModel: DEFAULT_BASE_MODEL,
-      defaultLoraModel: DEFAULT_LORA_MODEL,
-      baseModelReady: baseModelCache.ok,
-      baseModelCache,
-      loraExists: modelPathExists(DEFAULT_LORA_MODEL),
-      pythonLauncher: getPythonLauncher([INFER_SCRIPT]).label,
-      condaEnv: INFER_PYTHON ? null : INFER_CONDA_ENV,
-      hfHubCache: HF_HUB_CACHE,
-      defaults: {
-        loraAdapterName: DEFAULT_LORA_ADAPTER_NAME,
-        prompt: DEFAULT_PROMPT,
-        negativePrompt: DEFAULT_NEGATIVE_PROMPT,
-        numInferenceSteps: DEFAULT_NUM_INFERENCE_STEPS,
-        device: DEFAULT_DEVICE,
-        enableMaskToBox: DEFAULT_ENABLE_MASK_TO_BOX,
-        maskBoxMargin: DEFAULT_MASK_BOX_MARGIN,
-        enableMaskBlur: DEFAULT_ENABLE_MASK_BLUR,
-        blurKernel: DEFAULT_BLUR_KERNEL,
-        blurSigma: DEFAULT_BLUR_SIGMA,
-        enableMaskDilation: DEFAULT_ENABLE_MASK_DILATION,
-        dilationKernel: DEFAULT_DILATION_KERNEL
-      }
+      samDir: SAM_DIR,
+      launchScript: LAUNCH_SCRIPT,
+      launchExists: fileExists(LAUNCH_SCRIPT),
+      defaultCheckpoint: DEFAULT_CHECKPOINT,
+      checkpointExists: fileExists(DEFAULT_CHECKPOINT),
+      pythonLauncher: getPythonLauncher([LAUNCH_SCRIPT]).label,
+      condaEnv: SAM_PYTHON ? null : SAM_CONDA_ENV,
+      modelTypes: ["vit_h", "vit_l", "vit_b"]
     });
   }
 
@@ -849,11 +445,10 @@ function listen(port) {
   });
 
   server.listen(port, "127.0.0.1", () => {
-    console.log(`Mask edit UI running at http://127.0.0.1:${port}`);
-    console.log(`INFER_PKG_DIR=${INFER_PKG_DIR}`);
-    console.log(`INFER_BASE_MODEL=${DEFAULT_BASE_MODEL}`);
-    console.log(`INFER_LORA_MODEL=${DEFAULT_LORA_MODEL}`);
-    console.log(`INFER_PYTHON=${getPythonLauncher([INFER_SCRIPT]).label}`);
+    console.log(`Mask SAM UI running at http://127.0.0.1:${port}`);
+    console.log(`SAM_DIR=${SAM_DIR}`);
+    console.log(`SAM_CHECKPOINT=${DEFAULT_CHECKPOINT}`);
+    console.log(`SAM_PYTHON=${getPythonLauncher([LAUNCH_SCRIPT]).label}`);
   });
 }
 
