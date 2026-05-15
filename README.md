@@ -1,6 +1,6 @@
-# SAM Mask Console
+# Mask Edit Console
 
-一个轻量 Web UI，用来上传原图和二值 mask，并调用 `~/Project/segment-anything/launch.py` 生成 SAM refined mask 和可视化结果。
+一个轻量 Web UI，用来上传原图和二值 mask，并调用旁边的 `~/Project/infer_pkg/inference.py` 执行 Qwen Image mask edit。
 
 ## 启动
 
@@ -21,13 +21,19 @@ http://127.0.0.1:5173
 默认后端目录：
 
 ```text
-~/Project/segment-anything
+~/Project/infer_pkg
 ```
 
-默认权重路径：
+默认 base model：
 
 ```text
-~/Project/segment-anything/sam_vit_h_4b8939.pth
+Qwen/Qwen-Image-Edit-2511
+```
+
+默认 LoRA 权重：
+
+```text
+~/Project/infer_pkg/pretrained_weights/pytorch_lora_weights.safetensors
 ```
 
 默认 Python 环境：
@@ -39,16 +45,22 @@ conda run --no-capture-output -n vae-mnist python
 也可以用环境变量覆盖：
 
 ```bash
-SAM_DIR=/path/to/segment-anything SAM_CHECKPOINT=/path/to/sam.pth SAM_CONDA_ENV=vae-mnist npm start
+INFER_PKG_DIR=/path/to/infer_pkg \
+INFER_BASE_MODEL=Qwen/Qwen-Image-Edit-2511 \
+INFER_LORA_MODEL=/path/to/pytorch_lora_weights.safetensors \
+INFER_CONDA_ENV=vae-mnist \
+npm start
 ```
 
 如果想直接指定 Python 可执行文件，可以使用：
 
 ```bash
-SAM_PYTHON=/path/to/python npm start
+INFER_PYTHON=/path/to/python npm start
 ```
 
-权重尚未下载时，页面会显示 `CHECKPOINT: MISSING`，提交处理会返回明确的缺失路径。下载权重后刷新页面即可运行。
+默认 prompt、步数和设备也可以通过 `INFER_PROMPT`、`INFER_NUM_INFERENCE_STEPS`、`INFER_DEVICE` 覆盖。页面会显示 `MODEL: READY` 或明确的缺失状态。
+
+后端默认以离线模式调用推理进程，不会主动从 Hugging Face Hub 下载模型。对于 `Qwen/Qwen-Image-Edit-2511` 这种 Hub model id，提交前会检查本地 Hugging Face cache 是否存在完整 snapshot；如果 cache 残缺，会直接返回 `BASE_MODEL_CACHE_INCOMPLETE`。也可以把页面里的 Base model 改成一个完整的本地模型目录。
 
 ## 输入方式
 
@@ -58,5 +70,5 @@ SAM_PYTHON=/path/to/python npm start
 
 处理完成后，页面会显示：
 
-- `MASKED OUTPUT`：`launch.py` 保存的红色半透明 mask 可视化图。
-- `BINARY MASK`：`launch.py` 保存的二值 mask。
+- `EDIT OUTPUT`：`infer_pkg` 保存的编辑结果可视化图。
+- `BINARY MASK`：本次推理使用的输入 mask，可继续在页面内编辑。

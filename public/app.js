@@ -21,10 +21,16 @@ const state = {
 const els = {
   form: document.querySelector("#processForm"),
   runtimeMeta: document.querySelector("#runtimeMeta"),
-  checkpointState: document.querySelector("#checkpointState"),
-  checkpoint: document.querySelector("#checkpoint"),
-  modelType: document.querySelector("#modelType"),
-  useBox: document.querySelector("#useBox"),
+  weightState: document.querySelector("#weightState"),
+  baseModel: document.querySelector("#baseModel"),
+  loraModel: document.querySelector("#loraModel"),
+  loraAdapter: document.querySelector("#loraAdapter"),
+  prompt: document.querySelector("#prompt"),
+  negativePrompt: document.querySelector("#negativePrompt"),
+  numInferenceSteps: document.querySelector("#numInferenceSteps"),
+  device: document.querySelector("#device"),
+  enableMaskDilation: document.querySelector("#enableMaskDilation"),
+  enableMaskBlur: document.querySelector("#enableMaskBlur"),
   runButton: document.querySelector("#runButton"),
   resetButton: document.querySelector("#resetButton"),
   processState: document.querySelector("#processState"),
@@ -687,22 +693,36 @@ async function loadConfig() {
   try {
     const response = await fetch("/api/config");
     const config = await response.json();
-    els.checkpoint.value = config.defaultCheckpoint || "";
-    els.runtimeMeta.textContent = `SAM: ${config.samDir} | PY: ${config.pythonLauncher || "unknown"}`;
-    if (config.checkpointExists) {
-      els.checkpointState.textContent = "CHECKPOINT: READY";
-      els.checkpointState.classList.add("ready");
+    const defaults = config.defaults || {};
+    els.baseModel.value = config.defaultBaseModel || "";
+    els.loraModel.value = config.defaultLoraModel || "";
+    els.loraAdapter.value = defaults.loraAdapterName || "default";
+    els.prompt.value = defaults.prompt || "";
+    els.negativePrompt.value = defaults.negativePrompt || "";
+    els.numInferenceSteps.value = defaults.numInferenceSteps || 50;
+    els.device.value = defaults.device || "cuda:0";
+    els.enableMaskDilation.checked = Boolean(defaults.enableMaskDilation);
+    els.enableMaskBlur.checked = Boolean(defaults.enableMaskBlur);
+    els.runtimeMeta.textContent = `infer_pkg: ${config.inferPkgDir} | PY: ${config.pythonLauncher || "unknown"}`;
+    els.weightState.classList.remove("ready", "error");
+    if (config.scriptExists && config.loraExists && config.baseModelReady) {
+      els.weightState.textContent = "MODEL: READY";
+      els.weightState.classList.add("ready");
     } else {
-      els.checkpointState.textContent = "CHECKPOINT: MISSING";
-      els.checkpointState.classList.add("error");
+      els.weightState.textContent = !config.scriptExists
+        ? "SCRIPT: MISSING"
+        : !config.baseModelReady
+          ? "BASE: MISSING"
+          : "LORA: MISSING";
+      els.weightState.classList.add("error");
     }
-    if (!config.launchExists) {
-      setProcess("error", "后端脚本缺失", `找不到 launch.py：${config.launchScript}`, "missing launch.py");
+    if (!config.scriptExists) {
+      setProcess("error", "后端脚本缺失", `找不到 inference.py：${config.inferScript}`, "missing inference.py");
     }
   } catch (error) {
     els.runtimeMeta.textContent = "后端连接失败";
-    els.checkpointState.textContent = "BACKEND: OFFLINE";
-    els.checkpointState.classList.add("error");
+    els.weightState.textContent = "BACKEND: OFFLINE";
+    els.weightState.classList.add("error");
     setProcess("error", "后端不可用", error.message, error.stack || error.message);
   }
 }
@@ -717,15 +737,25 @@ async function submitProcess(event) {
     return;
   }
 
-  const checkpoint = els.checkpoint.value.trim();
-  if (!checkpoint) {
-    setProcess("error", "缺少权重路径", "请填写 SAM checkpoint 路径。", "missing checkpoint");
+  const baseModel = els.baseModel.value.trim();
+  const loraModel = els.loraModel.value.trim();
+  const prompt = els.prompt.value.trim();
+  if (!baseModel) {
+    setProcess("error", "缺少 base model", "请填写 base model 名称或路径。", "missing base model");
+    return;
+  }
+  if (!loraModel) {
+    setProcess("error", "缺少 LoRA 权重", "请填写 LoRA 权重路径。", "missing lora model");
+    return;
+  }
+  if (!prompt) {
+    setProcess("error", "缺少 prompt", "请填写编辑 prompt。", "missing prompt");
     return;
   }
 
   els.runButton.disabled = true;
   startTimer();
-  setProcess("running", "处理中", "正在上传输入并调用 segment-anything/launch.py。", "dispatching job...");
+  setProcess("running", "处理中", "正在上传输入并调用 infer_pkg/inference.py。", "dispatching job...");
 
   try {
     const response = await fetch("/api/process", {
@@ -734,9 +764,15 @@ async function submitProcess(event) {
       body: JSON.stringify({
         image,
         mask,
-        checkpoint,
-        modelType: els.modelType.value,
-        useBox: els.useBox.checked
+        baseModel,
+        loraModel,
+        loraAdapterName: els.loraAdapter.value.trim() || "default",
+        prompt,
+        negativePrompt: els.negativePrompt.value,
+        numInferenceSteps: Number(els.numInferenceSteps.value) || 50,
+        device: els.device.value.trim() || "cuda:0",
+        enableMaskDilation: els.enableMaskDilation.checked,
+        enableMaskBlur: els.enableMaskBlur.checked
       })
     });
     const result = await response.json();
@@ -754,7 +790,7 @@ async function submitProcess(event) {
     setProcess(
       "done",
       "处理完成",
-      `run ${result.runId} 已生成可视化结果和二值 mask。`,
+      `run ${result.runId} 已生成编辑结果和输入 mask。`,
       [result.logs?.stdout, result.logs?.stderr].filter(Boolean).join("\n") || "done"
     );
     stopTimer(result.durationMs);
